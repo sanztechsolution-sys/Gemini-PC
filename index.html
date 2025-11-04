@@ -35,7 +35,7 @@
         <span>Chrome</span>
       </div>
       <div class="icon" data-app="notepad">
-        <img src="https://storage.googleapis.com/gemini-95-icons/GemNotes.png" alt="Notepad" />
+        <img src="https://storage.googleapis.com/gemini-95-icons/GemNotes.png" alt="Notepad" id="notepad-icon" />
         <span>GemNotes</span>
       </div>
       <div class="icon" data-app="paint">
@@ -79,6 +79,14 @@
           style="width: 48px; height: 48px"
         />
         <span>Settings</span>
+      </div>
+      <div class="icon" data-app="copilot">
+        <img
+          src="https://win98icons.alexmeub.com/icons/png/agent-1.png"
+          alt="AI Copilot"
+          style="width: 48px; height: 48px"
+        />
+        <span>AI Copilot</span>
       </div>
 
 
@@ -155,6 +163,7 @@
             <button class="notepad-story-button">Generate Story</button>
           </div>
           <textarea
+            id="notepad-textarea"
             class="notepad-textarea"
             style="
               width: 100%;
@@ -378,6 +387,26 @@
         </div>
       </div>
 
+      <div class="window resizable" id="copilot" style="width: 450px; height: 350px;">
+        <div class="window-titlebar">
+          <span class="window-title">AI Copilot</span>
+          <div class="window-controls">
+            <div class="window-minimize window-control-button">−</div>
+            <div class="window-close window-control-button">✕</div>
+          </div>
+        </div>
+        <div class="window-content copilot-content">
+          <div class="copilot-log">
+            <p><i>Ready to receive instructions...</i></p>
+          </div>
+          <div class="copilot-input-area">
+            <input type="text" class="copilot-input" placeholder="e.g., open notepad and type 'hello'" />
+            <button id="copilot-mic-btn" class="copilot-mic-button" title="Start voice input">🎤</button>
+            <button class="copilot-send">Execute</button>
+          </div>
+        </div>
+      </div>
+
 
       <!-- Start Menu -->
       <div class="start-menu" id="start-menu">
@@ -390,6 +419,7 @@
         <div class="start-menu-item" data-app="minesweeper">GemSweeper</div>
         <div class="start-menu-item" data-app="mediaPlayer">GemPlayer</div>
         <div class="start-menu-item" data-app="settings">Settings</div>
+        <div class="start-menu-item" data-app="copilot">AI Copilot</div>
       </div>
 
       <!-- Taskbar -->

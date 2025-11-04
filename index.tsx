@@ -120,6 +120,7 @@ async function openApp(appName: string): Promise<void> {
             case 'imageViewer': iconSrc = 'https://win98icons.alexmeub.com/icons/png/display_properties-4.png'; title = 'Image Viewer'; break;
             case 'mediaPlayer': iconSrc = 'https://storage.googleapis.com/gemini-95-icons/ytmediaplayer.png'; title = 'GemPlayer'; break;
             case 'settings': iconSrc = 'https://win98icons.alexmeub.com/icons/png/settings-0.png'; title = 'Settings'; break;
+            case 'copilot': iconSrc = 'https://win98icons.alexmeub.com/icons/png/agent-1.png'; title = 'AI Copilot'; break;
          }
     }
 
@@ -178,6 +179,9 @@ async function openApp(appName: string): Promise<void> {
     }
     else if (appName === 'settings') {
         initSettingsApp(windowElement);
+    }
+    else if (appName === 'copilot') {
+        initCopilotApp(windowElement);
     }
 }
 
@@ -1153,6 +1157,213 @@ function initSettingsApp(windowElement: HTMLDivElement): void {
 
     generateBtn.addEventListener('click', generateWallpaper);
     resetBtn.addEventListener('click', resetWallpaper);
+}
+
+// --- AI Copilot App Logic ---
+async function initCopilotApp(windowElement: HTMLDivElement): Promise<void> {
+    const logDiv = windowElement.querySelector('.copilot-log') as HTMLDivElement;
+    const inputEl = windowElement.querySelector('.copilot-input') as HTMLInputElement;
+    const sendButton = windowElement.querySelector('.copilot-send') as HTMLButtonElement;
+    const micButton = windowElement.querySelector('#copilot-mic-btn') as HTMLButtonElement;
+
+    if (!logDiv || !inputEl || !sendButton || !micButton) {
+        console.error("Copilot elements not found!");
+        return;
+    }
+
+    function addLog(text: string, className: string = '') {
+        const p = document.createElement('p');
+        if (className) p.classList.add(className);
+        p.textContent = text;
+        logDiv.appendChild(p);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    // --- Voice-to-Text Logic ---
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition: any | null = null;
+    let isListening = false;
+
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'ms-MY'; // Set to Malaysian Malay
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+            isListening = true;
+            micButton.classList.add('listening');
+            micButton.title = "Stop listening";
+            addLog('Listening...', 'ai-thought');
+        };
+
+        recognition.onend = () => {
+            isListening = false;
+            micButton.classList.remove('listening');
+            micButton.title = "Start voice input";
+        };
+
+        recognition.onerror = (event: any) => {
+            addLog(`Speech recognition error: ${event.error}`, 'ai-error');
+        };
+
+        recognition.onresult = (event: any) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+            inputEl.value = finalTranscript || interimTranscript;
+        };
+
+    } else {
+        micButton.style.display = 'none';
+        addLog('Voice recognition not supported by this browser.', 'ai-error');
+    }
+
+    micButton.addEventListener('click', () => {
+        if (!recognition) return;
+        if (isListening) {
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    });
+    // --- End Voice-to-Text Logic ---
+
+    const executeInstruction = async () => {
+        const instruction = inputEl.value.trim();
+        if (!instruction) return;
+
+        addLog(`> ${instruction}`, 'user-command');
+        inputEl.value = '';
+        inputEl.disabled = true;
+        sendButton.disabled = true;
+        micButton.disabled = true;
+
+        try {
+            if (!geminiInstance) {
+                if (!await initializeGeminiIfNeeded('initCopilotApp')) {
+                    throw new Error("Failed to initialize Gemini API.");
+                }
+            }
+            
+            const { Type } = await import('@google/genai');
+
+            const tools = [
+                {
+                    functionDeclarations: [
+                        {
+                            name: 'clickElement',
+                            description: 'Clicks a UI element on the screen given its ID.',
+                            parameters: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    elementId: {
+                                        type: Type.STRING,
+                                        description: 'The HTML ID of the element to click (e.g., "notepad-icon", "start-button").',
+                                    },
+                                },
+                                required: ['elementId'],
+                            },
+                        },
+                        {
+                            name: 'typeText',
+                            description: 'Types text into an input field or textarea.',
+                            parameters: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    elementId: {
+                                        type: Type.STRING,
+                                        description: 'The HTML ID of the input or textarea element.',
+                                    },
+                                    textToType: {
+                                        type: Type.STRING,
+                                        description: 'The text that should be typed into the element.',
+                                    },
+                                },
+                                required: ['elementId', 'textToType'],
+                            },
+                        },
+                    ],
+                },
+            ];
+
+            addLog('Thinking...', 'ai-thought');
+            
+            const systemPrompt = `You are an AI assistant controlling a retro OS. Your goal is to execute the user's instruction by calling the available functions in the correct sequence.
+
+Here is a list of applications and their important element IDs:
+- GemNotes (the notepad app):
+  - Icon ID to open: "notepad-icon"
+  - Text area ID for typing: "notepad-textarea"
+
+When a user mentions an application like "notepad" or "gemnotes", use the corresponding element ID from the list above. For example, to type in the notepad, use the 'typeText' function with elementId 'notepad-textarea'. Acknowledge what you are about to do before showing the action.
+
+User instruction: "${instruction}"`;
+
+            // @ts-ignore
+            const response = await geminiInstance.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: systemPrompt,
+                config: {
+                    tools: tools,
+                },
+            });
+
+            if (response.functionCalls && response.functionCalls.length > 0) {
+                for (const funcCall of response.functionCalls) {
+                    const { name, args } = funcCall;
+                    addLog(`Action: ${name}(${JSON.stringify(args)})`, 'ai-action');
+
+                    // Artificial delay to make it look like it's "doing" something
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    if (name === 'clickElement') {
+                        const { elementId } = args;
+                        const element = document.getElementById(elementId as string);
+                        if (element) {
+                            (element as HTMLElement).click();
+                        } else {
+                            throw new Error(`Element with ID "${elementId}" not found.`);
+                        }
+                    } else if (name === 'typeText') {
+                        const { elementId, textToType } = args;
+                        const element = document.getElementById(elementId as string);
+                        if (element && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+                            element.value = textToType as string;
+                        } else {
+                            throw new Error(`Text input element with ID "${elementId}" not found.`);
+                        }
+                    }
+                }
+            } else {
+                addLog(`AI Response: ${response.text}`, 'ai-thought');
+            }
+
+        } catch (error: any) {
+            addLog(`Error: ${error.message}`, 'ai-error');
+        } finally {
+            inputEl.disabled = false;
+            sendButton.disabled = false;
+            micButton.disabled = false;
+            inputEl.focus();
+        }
+    };
+
+    sendButton.addEventListener('click', executeInstruction);
+    inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            executeInstruction();
+        }
+    });
 }
 
 async function initializeGeminiIfNeeded(context: string): Promise<boolean> {
